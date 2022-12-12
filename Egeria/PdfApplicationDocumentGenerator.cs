@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using Nml.Improve.Me.Dependencies;
 
@@ -6,12 +6,12 @@ namespace Nml.Improve.Me
 {
 	public class PdfApplicationDocumentGenerator : IApplicationDocumentGenerator
 	{
-		private readonly IDataContext DataContext;
-		private IPathProvider _templatePathProvider;
-		public IViewGenerator View_Generator;
-		internal readonly IConfiguration _configuration;
-		private readonly ILogger<PdfApplicationDocumentGenerator> _logger;
-		private readonly IPdfGenerator _pdfGenerator;
+		private readonly IDataContext dataContext;
+		private readonly IPathProvider templatePathProvider;
+		private readonly IViewGenerator viewGenerator;
+		private readonly IConfiguration configuration;
+		private readonly IPdfGenerator pdfGenerator;
+		private readonly ILogger<PdfApplicationDocumentGenerator> logger;
 
 		public PdfApplicationDocumentGenerator(
 			IDataContext dataContext,
@@ -21,20 +21,20 @@ namespace Nml.Improve.Me
 			IPdfGenerator pdfGenerator,
 			ILogger<PdfApplicationDocumentGenerator> logger)
 		{
-			if (dataContext != null)
-				throw new ArgumentNullException(nameof(dataContext));
-			
-			DataContext = dataContext;
-			_templatePathProvider = templatePathProvider ?? throw new ArgumentNullException("templatePathProvider");
-			View_Generator = viewGenerator;
-			_configuration = configuration;
-			_logger = logger ?? throw new ArgumentNullException(nameof(logger));
-			_pdfGenerator = pdfGenerator;
+			this.dataContext = dataContext ?? throw new ArgumentNullException(nameof(dataContext)); ;
+			this.templatePathProvider = templatePathProvider ?? throw new ArgumentNullException(templatePathProvider);
+			this.viewGenerator = viewGenerator ?? throw new ArgumentNullException(nameof(viewGenerator)); ;
+			this.configuration = configuration ?? throw new ArgumentNullException(nameof(configuration)); ;
+			this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+			this.pdfGenerator = pdfGenerator ?? throw new ArgumentNullException(nameof(pdfGenerator)); ;
 		}
-		
+
 		public byte[] Generate(Guid applicationId, string baseUri)
 		{
-			Application application = DataContext.Applications.Single(app => app.Id == applicationId);
+			if (applicationId == Guid.Empty || String.IsNullOrEmpty(baseUri))
+				return null;
+
+			Application application = dataContext.Applications.Single(app => app.Id == applicationId);
 
 			if (application != null)
 			{
@@ -46,21 +46,21 @@ namespace Nml.Improve.Me
 
 				if (application.State == ApplicationState.Pending)
 				{
-					string path = _templatePathProvider.Get("PendingApplication");
+					string path = templatePathProvider.Get("PendingApplication");
 					PendingApplicationViewModel vm = new PendingApplicationViewModel
 					{
 						ReferenceNumber = application.ReferenceNumber,
 						State = application.State.ToDescription(),
-						FullName = application.Person.FirstName + " " + application.Person.Surname,
+						FullName = $"{application.Person.FirstName} {application.Person.Surname}"
 						AppliedOn = application.Date,
-						SupportEmail = _configuration.SupportEmail,
-						Signature = _configuration.Signature
+						SupportEmail = configuration.SupportEmail,
+						Signature = configuration.Signature
 					};
-					view = View_Generator.GenerateFromPath(string.Format("{0}{1}", baseUri, path), vm);
+					view = viewGenerator.GenerateFromPath($"{baseUri}{path}", vm);
 				}
 				else if (application.State == ApplicationState.Activated)
 				{
-					string path = _templatePathProvider.Get("ActivatedApplication");
+					string path = templatePathProvider.Get("ActivatedApplication");
 					ActivatedApplicationViewModel vm = new ActivatedApplicationViewModel
 					{
 						ReferenceNumber = application.ReferenceNumber,
@@ -69,17 +69,17 @@ namespace Nml.Improve.Me
 						LegalEntity = application.IsLegalEntity ? application.LegalEntity : null,
 						PortfolioFunds = application.Products.SelectMany(p => p.Funds),
 						PortfolioTotalAmount = application.Products.SelectMany(p => p.Funds)
-														.Select(f => (f.Amount - f.Fees) * _configuration.TaxRate)
+														.Select(f => (f.Amount - f.Fees) * configuration.TaxRate)
 														.Sum(),
 						AppliedOn = application.Date,
-						SupportEmail = _configuration.SupportEmail,
-						Signature = _configuration.Signature
+						SupportEmail = configuration.SupportEmail,
+						Signature = configuration.Signature
 					};
-					view = View_Generator.GenerateFromPath(baseUri + path, vm);
+					view = viewGenerator.GenerateFromPath($"{baseUri}{path}", vm);
 				}
 				else if (application.State == ApplicationState.InReview)
 				{
-					var templatePath = _templatePathProvider.Get("InReviewApplication");
+					var templatePath = templatePathProvider.Get("InReviewApplication");
 					var inReviewMessage = "Your application has been placed in review" +
 										application.CurrentReview.Reason switch
 										{
@@ -93,26 +93,22 @@ namespace Nml.Improve.Me
 					var inReviewApplicationViewModel = new InReviewApplicationViewModel();
 					inReviewApplicationViewModel.ReferenceNumber = application.ReferenceNumber;
 					inReviewApplicationViewModel.State = application.State.ToDescription();
-					inReviewApplicationViewModel.FullName = string.Format(
-						"{0} {1}",
-						application.Person.FirstName,
-						application.Person.Surname);
-					inReviewApplicationViewModel.LegalEntity =
-						application.IsLegalEntity ? application.LegalEntity : null;
+					inReviewApplicationViewModel.FullName = $"{application.Person.FirstName} { application.Person.Surname}";
+					inReviewApplicationViewModel.LegalEntity = application.IsLegalEntity ? application.LegalEntity : null;
 					inReviewApplicationViewModel.PortfolioFunds = application.Products.SelectMany(p => p.Funds);
 					inReviewApplicationViewModel.PortfolioTotalAmount = application.Products.SelectMany(p => p.Funds)
-						.Select(f => (f.Amount - f.Fees) * _configuration.TaxRate)
+						.Select(f => (f.Amount - f.Fees) * configuration.TaxRate)
 						.Sum();
 					inReviewApplicationViewModel.InReviewMessage = inReviewMessage;
 					inReviewApplicationViewModel.InReviewInformation = application.CurrentReview;
 					inReviewApplicationViewModel.AppliedOn = application.Date;
-					inReviewApplicationViewModel.SupportEmail = _configuration.SupportEmail;
-					inReviewApplicationViewModel.Signature = _configuration.Signature;
-					view = View_Generator.GenerateFromPath($"{baseUri}{templatePath}", inReviewApplicationViewModel);
+					inReviewApplicationViewModel.SupportEmail = configuration.SupportEmail;
+					inReviewApplicationViewModel.Signature = configuration.Signature;
+					view = viewGenerator.GenerateFromPath($"{baseUri}{templatePath}", inReviewApplicationViewModel);
 				}
 				else
 				{
-					_logger.LogWarning(
+					logger.LogWarning(
 						$"The application is in state '{application.State}' and no valid document can be generated for it.");
 					return null;
 				}
@@ -126,13 +122,13 @@ namespace Nml.Improve.Me
 						HeaderHtml = PdfConstants.Header
 					}
 				};
-				var pdf = _pdfGenerator.GenerateFromHtml(view, pdfOptions);
+				var pdf = pdfGenerator.GenerateFromHtml(view, pdfOptions);
 				return pdf.ToBytes();
 			}
 			else
 			{
-				
-				_logger.LogWarning(
+
+				logger.LogWarning(
 					$"No application found for id '{applicationId}'");
 				return null;
 			}
